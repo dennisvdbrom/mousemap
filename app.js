@@ -1,43 +1,65 @@
-const http         = require('http'),
-      fs           = require('fs'),
-      path         = require('path'),
-      contentTypes = require('./utils/content-types'),
-      sysInfo      = require('./utils/sys-info'),
-      env          = process.env;
+var app = require('express')();
+var server = require('http').Server(app);
+var io = require('socket.io')(server);
 
-let server = http.createServer(function (req, res) {
-  let url = req.url;
-  if (url == '/') {
-    url += 'index.html';
-  }
+app.get('/', function(request, response) {
 
-  // IMPORTANT: Your application HAS to respond to GET /health with status 200
-  //            for OpenShift health monitoring
+  response.sendFile(__dirname + '/index.html');
 
-  if (url == '/health') {
-    res.writeHead(200);
-    res.end();
-  } else if (url == '/info/gen' || url == '/info/poll') {
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'no-cache, no-store');
-    res.end(JSON.stringify(sysInfo[url.slice(6)]()));
-  } else {
-    fs.readFile('./static' + url, function (err, data) {
-      if (err) {
-        res.writeHead(404);
-        res.end('Not found');
-      } else {
-        let ext = path.extname(url).slice(1);
-        res.setHeader('Content-Type', contentTypes[ext]);
-        if (ext === 'html') {
-          res.setHeader('Cache-Control', 'no-cache, no-store');
-        }
-        res.end(data);
-      }
-    });
-  }
 });
 
-server.listen(env.NODE_PORT || 3000, env.NODE_IP || 'localhost', function () {
-  console.log(`Application worker ${process.pid} started...`);
+var sockets = [];
+
+function getSocketIds() {
+
+  var returnArray = [];
+
+  for(i = 0; i < sockets.length; i++){
+    returnArray[i] = sockets[i].id;
+  }
+
+  return returnArray;
+
+}
+
+io.on('connection', function(socket) {
+  sockets.push(socket);
+  console.log('Socket connected :'+socket.id);
+
+  socket.on('disconnect', function() {
+
+    var i = sockets.indexOf(socket);
+    console.log('Socket '+sockets[i].id+ ' got disconnected');
+    sockets.splice(i, 1);
+
+
+    io.emit('allsockets', {
+      data: getSocketIds()
+    });
+
+  });
+
+  socket.on('getall:sockets', function(){
+    io.emit('allsockets', {
+      data: getSocketIds()
+    });
+  });
+
+
+  socket.on('mouse:move', function(message) {
+    console.log(message);
+    io.emit('mouse:update', {
+      data: message
+    });
+  });
+
+
+
+
+});
+
+
+
+server.listen(3000, function(){
+  console.log('Listening on port 3000');
 });
